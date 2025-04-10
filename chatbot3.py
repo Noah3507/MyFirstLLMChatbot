@@ -1,5 +1,6 @@
 import os
 import json
+import streamlit as st
 from openai import OpenAI
 from datetime import datetime
 
@@ -28,44 +29,51 @@ def save_chat_history(messages):
     with open('chat_history.json', 'w', encoding='utf-8') as f:
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
-def chat_with_bot():
-    messages = load_chat_history()
+def init_session_state():
+    if "messages" not in st.session_state:
+        st.session_state.messages = load_chat_history()
+
+def main():
+    st.title("🤖 AI 챗봇")
     
-    while True:
-        user_input = input("\n당신: ")
-        if user_input.lower() == 'bye':
-            print("챗봇: 안녕히 가세요!")
-            save_chat_history(messages)
-            break
+    init_session_state()
+    
+    # 채팅 이력 표시
+    for message in st.session_state.messages[1:]:  # 시스템 메시지 제외
+        role = "당신" if message["role"] == "user" else "챗봇"
+        with st.chat_message(message["role"]):
+            st.write(f"{message['content']}")
+
+    # 사용자 입력
+    if user_input := st.chat_input("메시지를 입력하세요..."):
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        
+        with st.chat_message("user"):
+            st.write(user_input)
+
+        # 챗봇 응답
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            assistant_message = []
             
-        messages.append({"role": "user", "content": user_input})
-        
-        response = client.chat.completions.create(
-            messages=messages,
-            model=model_name,
-            stream=True,
-            stream_options={'include_usage': True}
-        )
-        
-        print("\n챗봇: ", end="")
-        assistant_message = []
-        usage = None
-        for update in response:
-            if update.choices and update.choices[0].delta:
-                content = update.choices[0].delta.content or ""
-                print(content, end="")
-                assistant_message.append(content)
-            if update.usage:
-                usage = update.usage
-                
-        messages.append({
-            "role": "assistant",
-            "content": "".join(assistant_message)
-        })
-        
-        # 매 응답 후 대화 내용 저장
-        save_chat_history(messages)
+            response = client.chat.completions.create(
+                messages=st.session_state.messages,
+                model=model_name,
+                stream=True,
+                stream_options={'include_usage': True}
+            )
+            
+            for update in response:
+                if update.choices and update.choices[0].delta:
+                    content = update.choices[0].delta.content or ""
+                    assistant_message.append(content)
+                    response_placeholder.write("".join(assistant_message))
+            
+            final_response = "".join(assistant_message)
+            st.session_state.messages.append({"role": "assistant", "content": final_response})
+            
+        # 대화 내용 저장
+        save_chat_history(st.session_state.messages)
 
 if __name__ == "__main__":
-    print("챗봇과 대화를 시작합니다. 종료하려면 'bye'를 입력하세요.")
-    chat_with_bot()
+    main()
